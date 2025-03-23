@@ -27,13 +27,21 @@ def get_network_status():
     return network_status
 
 def ping_host(host):
-    """Ping a host and return the result"""
-    param = '-n' if platform.system().lower() == 'windows' else '-c'
-    command = ['ping', param, '1', host]
+    """Check if a host is reachable using socket connection"""
     try:
-        output = subprocess.check_output(command).decode()
-        return output
-    except subprocess.CalledProcessError:
+        # Use socket instead of ping command
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(1)
+        result = s.connect_ex((host, 80))
+        s.close()
+        
+        if result == 0:
+            return f"Socket connection to {host} successful"
+        else:
+            return None
+    except Exception as e:
+        logger.warning(f"Socket connection to {host} failed: {e}")
         return None
 
 def scan_local_network():
@@ -57,9 +65,14 @@ def collect_metrics():
     # Simulate collecting network metrics
     # In a real implementation, you would use libraries like psutil, scapy, etc.
     
-    # Ping a common host to check connectivity
-    ping_result = ping_host('8.8.8.8')
-    latency = random.uniform(10, 100) if ping_result else 1000
+    # Check connectivity to a common host
+    try:
+        ping_result = ping_host('8.8.8.8')
+        latency = random.uniform(10, 100) if ping_result else 1000
+    except Exception as e:
+        logger.warning(f"Connectivity check failed, using simulated data: {e}")
+        ping_result = random.random() > 0.2  # 80% chance of success in simulation
+        latency = random.uniform(10, 100) if ping_result else 1000
     
     # Get devices on network
     devices = scan_local_network()
@@ -103,17 +116,20 @@ def collect_metrics():
                 f"Packet Loss={network_status['packet_loss']}%")
     
     # Check for anomalies
-    from app.models.anomaly_detector import AnomalyDetector
-    detector = AnomalyDetector()
-    anomalies = detector.detect_anomalies(network_status)
-    
-    if anomalies:
-        logger.warning(f"Anomalies detected: {anomalies}")
-        # Trigger self-healing
-        from app.healing.resolver import NetworkResolver
-        resolver = NetworkResolver()
-        for anomaly in anomalies:
-            resolver.handle_anomaly(anomaly)
+    try:
+        from app.models.anomaly_detector import AnomalyDetector
+        detector = AnomalyDetector()
+        anomalies = detector.detect_anomalies(network_status)
+        
+        if anomalies:
+            logger.warning(f"Anomalies detected: {anomalies}")
+            # Trigger self-healing
+            from app.healing.resolver import NetworkResolver
+            resolver = NetworkResolver()
+            for anomaly in anomalies:
+                resolver.handle_anomaly(anomaly)
+    except Exception as e:
+        logger.error(f"Error in anomaly detection: {e}")
     
     return network_status
 

@@ -20,6 +20,13 @@ def network_status():
     status = get_network_status()
     return jsonify(status)
 
+@main_bp.route('/api/network/history')
+def network_history():
+    """API endpoint to get network metrics history"""
+    status = get_network_status()
+    history = status.get('metrics_history', [])
+    return jsonify(history)
+
 @main_bp.route('/api/network/devices')
 def network_devices():
     """API endpoint to get list of network devices"""

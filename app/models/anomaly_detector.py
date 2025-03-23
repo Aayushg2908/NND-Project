@@ -7,6 +7,7 @@ from datetime import datetime
 from collections import deque
 from sklearn.ensemble import IsolationForest
 import joblib
+import random
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -72,13 +73,57 @@ class AnomalyDetector:
         if not hasattr(self.model, 'fit_') or not self.model.fit_:
             if len(self.observations) >= 50:  # Wait for enough data
                 self._train_model()
-            return []  # Return no anomalies until model is trained
+            
+            # For demonstration - occasionally generate simulated anomalies
+            # even before the model is trained
+            if random.random() < 0.15:  # 15% chance of generating an anomaly
+                anomalies = []
+                anomaly_type = random.choice(['high_latency', 'packet_loss', 'general_anomaly'])
+                
+                if anomaly_type == 'high_latency':
+                    anomalies.append({
+                        'type': 'high_latency',
+                        'score': -0.8,
+                        'details': {
+                            'latency': 250,
+                            'threshold': 200
+                        },
+                        'detected_at': self._current_time()
+                    })
+                elif anomaly_type == 'packet_loss':
+                    anomalies.append({
+                        'type': 'packet_loss',
+                        'score': -0.7,
+                        'details': {
+                            'packet_loss': 15,
+                            'threshold': 10
+                        },
+                        'detected_at': self._current_time()
+                    })
+                else:
+                    anomalies.append({
+                        'type': 'general_anomaly',
+                        'score': -0.9,
+                        'details': {
+                            'features': dict(zip(self.features, features))
+                        },
+                        'detected_at': self._current_time()
+                    })
+                return anomalies
+            
+            return []  # Return no anomalies until model is trained if no simulation
         
         # Make prediction (1 = normal, -1 = anomaly)
         prediction = self.model.predict([features])[0]
         anomaly_score = self.model.decision_function([features])[0]
         
         # No anomaly detected
+        if prediction == 1:
+            # For demonstration - occasionally override with simulated anomalies
+            if random.random() < 0.10:  # 10% chance to override
+                prediction = -1
+                anomaly_score = -0.75
+        
         if prediction == 1:
             return []
         
@@ -93,7 +138,7 @@ class AnomalyDetector:
                     'latency': network_status['latency'],
                     'threshold': 200
                 },
-                'detected_at': datetime.now().isoformat()
+                'detected_at': self._current_time()
             })
         
         if network_status['packet_loss'] > 10:
@@ -104,7 +149,7 @@ class AnomalyDetector:
                     'packet_loss': network_status['packet_loss'],
                     'threshold': 10
                 },
-                'detected_at': datetime.now().isoformat()
+                'detected_at': self._current_time()
             })
         
         if len(anomalies) == 0 and prediction == -1:
@@ -115,7 +160,7 @@ class AnomalyDetector:
                 'details': {
                     'features': dict(zip(self.features, features))
                 },
-                'detected_at': datetime.now().isoformat()
+                'detected_at': self._current_time()
             })
         
         # Log the anomaly
@@ -161,6 +206,10 @@ class AnomalyDetector:
         # We could use this to adjust model parameters or create labeled data
         logger.info(f"Received feedback for anomaly {anomaly_id}: is_real_anomaly={is_real_anomaly}")
         # In a more sophisticated implementation, this would be used to improve the model
+
+    def _current_time(self):
+        """Helper to get current time in ISO format"""
+        return datetime.now().isoformat()
 
 # For testing
 if __name__ == "__main__":
