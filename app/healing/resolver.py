@@ -28,12 +28,7 @@ class NetworkResolver:
         """Initialize the network resolver"""
         # Load active issues
         self.active_issues = {}
-        if os.path.exists(ISSUES_FILE):
-            try:
-                with open(ISSUES_FILE, 'r') as f:
-                    self.active_issues = json.load(f)
-            except Exception as e:
-                logger.error(f"Error loading active issues: {e}")
+        self._load_active_issues()
         
         # Load resolution history
         self.resolution_history = []
@@ -43,6 +38,19 @@ class NetworkResolver:
                     self.resolution_history = json.load(f)
             except Exception as e:
                 logger.error(f"Error loading resolution history: {e}")
+        
+        # Start the pending issues checker thread
+        self.pending_checker_thread = threading.Thread(target=self._check_pending_issues, daemon=True)
+        self.pending_checker_thread.start()
+    
+    def _load_active_issues(self):
+        """Force reload active issues from file"""
+        if os.path.exists(ISSUES_FILE):
+            try:
+                with open(ISSUES_FILE, 'r') as f:
+                    self.active_issues = json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading active issues: {e}")
     
     def _save_active_issues(self):
         """Save active issues to file"""
@@ -119,6 +127,7 @@ class NetworkResolver:
             return {'success': False, 'message': 'Issue not found'}
         
         issue = self.active_issues[issue_id]
+        logger.info(f"Starting resolution for issue {issue_id} with status {issue['status']}")
         
         if issue['status'] in ['resolved', 'resolving']:
             logger.info(f"Issue {issue_id} is already {issue['status']}")
@@ -208,6 +217,10 @@ class NetworkResolver:
             elif strategy_success_rate > random.random():
                 issue['status'] = 'resolved'
                 logger.info(f"Issue {issue_id} marked as resolved")
+                # Remove resolved issue immediately
+                self.active_issues.pop(issue_id)
+                self._save_active_issues()
+                logger.info(f"Issue {issue_id} removed from active issues")
             else:
                 issue['status'] = 'pending'
                 logger.info(f"Issue {issue_id} marked as pending - needs verification")
@@ -216,6 +229,10 @@ class NetworkResolver:
             if random.random() < 0.2:  # Reduced from 0.3 to keep more issues visible
                 issue['status'] = 'resolved'
                 logger.info(f"Issue {issue_id} eventually resolved despite command failures")
+                # Remove resolved issue immediately
+                self.active_issues.pop(issue_id)
+                self._save_active_issues()
+                logger.info(f"Issue {issue_id} removed from active issues")
             else:
                 issue['status'] = 'failed'
                 logger.warning(f"Issue {issue_id} resolution failed")
@@ -234,11 +251,6 @@ class NetworkResolver:
         }
         self.resolution_history.append(history_entry)
         self._save_resolution_history()
-        
-        # If resolved, remove from active issues
-        if issue['status'] == 'resolved':
-            self.active_issues.pop(issue_id)
-            self._save_active_issues()
         
         return {'success': success, 'message': '\n'.join(result_messages)}
     
@@ -331,6 +343,24 @@ class NetworkResolver:
                     'verification_wait': 3,
                     'success_rate': 0.5
                 }
+    
+    def _check_pending_issues(self):
+        """Background thread to check and retry pending issues"""
+        while True:
+            try:
+                current_time = datetime.now()
+                for issue_id, issue in list(self.active_issues.items()):
+                    if issue['status'] == 'pending':
+                        # Check if issue has been pending for more than 1 minute
+                        detected_time = datetime.fromisoformat(issue['detected_at'])
+                        if (current_time - detected_time).total_seconds() > 60:  # 1 minute
+                            logger.info(f"Retrying resolution for pending issue {issue_id} after 1 minute")
+                            self.auto_resolve(issue_id)
+            except Exception as e:
+                logger.error(f"Error checking pending issues: {e}")
+            
+            # Check every minute
+            time.sleep(60)
 
 # For testing
 if __name__ == "__main__":

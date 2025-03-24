@@ -5,7 +5,7 @@ from app.healing.resolver import NetworkResolver
 
 main_bp = Blueprint('main', __name__)
 
-# Initialize components
+# Initialize components as global variables
 anomaly_detector = AnomalyDetector()
 network_resolver = NetworkResolver()
 
@@ -41,6 +41,8 @@ def network_devices():
 @main_bp.route('/api/healing/issues')
 def get_issues():
     """Get current detected issues"""
+    # Force reload issues from file to ensure we have the latest state
+    network_resolver._load_active_issues()
     issues = network_resolver.get_active_issues()
     return jsonify(issues)
 
