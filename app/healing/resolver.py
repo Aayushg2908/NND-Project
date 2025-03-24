@@ -124,6 +124,14 @@ class NetworkResolver:
             logger.info(f"Issue {issue_id} is already {issue['status']}")
             return {'success': True, 'message': f"Issue is already {issue['status']}"}
         
+        # For demo - randomly decide if we should defer auto-resolution to keep issues visible
+        # This gives user time to see issues on the dashboard
+        if issue['status'] == 'new' and random.random() < 0.7:  # 70% chance to defer immediate resolution
+            logger.info(f"Deferring immediate resolution of issue {issue_id} for demonstration")
+            issue['status'] = 'pending'
+            self._save_active_issues()
+            return {'success': True, 'message': "Resolution deferred for demonstration"}
+        
         logger.info(f"Attempting to resolve issue {issue_id}")
         
         # Update issue status
@@ -184,7 +192,7 @@ class NetworkResolver:
         # Wait for verification period
         time.sleep(resolution_strategy.get('verification_wait', 2))
         
-        # For simulation/demo, increase success rate
+        # For simulation/demo, adjust success rates
         simulation_success_boost = 0.3  # Boost success rate by 30% for demo
         
         # Check if resolution was successful
@@ -192,7 +200,12 @@ class NetworkResolver:
             # In a real implementation, we would verify the issue is actually resolved
             # For this demo, we'll assume success for some strategies
             strategy_success_rate = resolution_strategy.get('success_rate', 0.5) + simulation_success_boost
-            if strategy_success_rate > random.random():
+            
+            # For demonstration - occasionally leave issues pending for user interaction
+            if random.random() < 0.6:  # 60% chance to mark as pending even if technically successful
+                issue['status'] = 'pending'
+                logger.info(f"Issue {issue_id} marked as pending for user demonstration - needs manual resolution")
+            elif strategy_success_rate > random.random():
                 issue['status'] = 'resolved'
                 logger.info(f"Issue {issue_id} marked as resolved")
             else:
@@ -200,7 +213,7 @@ class NetworkResolver:
                 logger.info(f"Issue {issue_id} marked as pending - needs verification")
         else:
             # For demo, still give a chance of success even if commands failed
-            if random.random() < 0.3:  # 30% chance to recover from failure
+            if random.random() < 0.2:  # Reduced from 0.3 to keep more issues visible
                 issue['status'] = 'resolved'
                 logger.info(f"Issue {issue_id} eventually resolved despite command failures")
             else:

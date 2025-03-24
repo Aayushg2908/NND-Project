@@ -9,3 +9,5 @@ scapy==2.4.5
 pyshark==0.4.3
 networkx==2.7.1
 schedule==1.1.0 
+
+pip install flask scikit-learn numpy pandas matplotlib joblib requests scapy pyshark networkx schedule

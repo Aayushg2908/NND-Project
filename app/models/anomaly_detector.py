@@ -76,7 +76,7 @@ class AnomalyDetector:
             
             # For demonstration - occasionally generate simulated anomalies
             # even before the model is trained
-            if random.random() < 0.15:  # 15% chance of generating an anomaly
+            if random.random() < 0.50:  # 50% chance of generating an anomaly (increased from 15%)
                 anomalies = []
                 anomaly_type = random.choice(['high_latency', 'packet_loss', 'general_anomaly'])
                 
@@ -120,7 +120,7 @@ class AnomalyDetector:
         # No anomaly detected
         if prediction == 1:
             # For demonstration - occasionally override with simulated anomalies
-            if random.random() < 0.10:  # 10% chance to override
+            if random.random() < 0.30:  # 30% chance to override (increased from 10%)
                 prediction = -1
                 anomaly_score = -0.75
         

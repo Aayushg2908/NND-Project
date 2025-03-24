@@ -29,6 +29,11 @@ def get_network_status():
 def ping_host(host):
     """Check if a host is reachable using socket connection"""
     try:
+        # For demonstration - simulate connection failures more frequently
+        if random.random() < 0.4:  # 40% chance of connection failure
+            logger.info(f"Simulating connection failure to {host}")
+            return None
+
         # Use socket instead of ping command
         import socket
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -50,11 +55,20 @@ def scan_local_network():
     # In a real implementation, you would use a library like scapy to scan
     devices = []
     for i in range(1, 4):  # Simulating 3 devices
+        # For demonstration - generate more device issues
+        status_chance = random.random()
+        if status_chance < 0.5:  # 50% chance to be up
+            status = 'up'
+        elif status_chance < 0.8:  # 30% chance to be down
+            status = 'down'
+        else:  # 20% chance to be in warning state
+            status = 'warning'
+            
         devices.append({
             'ip': f'192.168.1.{i}',
             'mac': f'00:00:00:00:00:0{i}',
             'hostname': f'device-{i}',
-            'status': 'up' if random.random() > 0.1 else 'down'
+            'status': status
         })
     return devices
 
