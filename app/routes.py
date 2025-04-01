@@ -1,15 +1,64 @@
-from flask import Blueprint, render_template, jsonify, request
-from app.network.monitor import get_network_status
+from flask import Blueprint, render_template, jsonify, request, current_app
+from app.network.monitor import get_network_status, scan_local_network
 from app.models.anomaly_detector import AnomalyDetector
 from app.healing.resolver import NetworkResolver
 import os
 import json
+from app import socketio
+from flask_socketio import emit
 
 main_bp = Blueprint('main', __name__)
 
 # Initialize components as global variables
 anomaly_detector = AnomalyDetector()
 network_resolver = NetworkResolver()
+
+# Socket.IO event handlers
+@socketio.on('connect')
+def handle_connect():
+    """Handle client connection"""
+    print("Client connected")
+    # Send initial data on connection
+    emit_active_issues()
+    emit_resolved_issues()
+    emit_logs()
+    emit_network_status()
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Handle client disconnection"""
+    print("Client disconnected")
+
+# Helper functions to emit Socket.IO events
+def emit_active_issues():
+    """Emit active issues to all clients"""
+    issues = network_resolver.get_active_issues()
+    socketio.emit('active_issues_update', issues)
+
+def emit_resolved_issues():
+    """Emit resolved issues to all clients"""
+    history = []
+    if os.path.exists(os.path.join('data', 'healing', 'resolution_history.json')):
+        try:
+            with open(os.path.join('data', 'healing', 'resolution_history.json'), 'r') as f:
+                history = json.load(f)
+        except Exception as e:
+            print(f"Error loading resolution history: {e}")
+    socketio.emit('resolved_issues_update', history)
+
+def emit_logs():
+    """Emit system logs to all clients"""
+    logs = get_latest_logs_data()
+    socketio.emit('logs_update', logs)
+
+def emit_network_status():
+    """Emit network status to all clients"""
+    status = get_network_status()
+    socketio.emit('network_status_update', status)
+
+# Register these emit functions with the NetworkResolver for callbacks
+network_resolver.register_update_callback(emit_active_issues)
+network_resolver.register_resolution_callback(emit_resolved_issues)
 
 @main_bp.route('/')
 def index():
@@ -80,6 +129,11 @@ def resolve_issue():
         # Force reload active issues after resolution attempt
         network_resolver._load_active_issues()
         
+        # Emit updates
+        emit_active_issues()
+        emit_resolved_issues()
+        emit_logs()
+        
         return jsonify(result)
     except Exception as e:
         print(f"Error resolving issue: {str(e)}")
@@ -88,8 +142,11 @@ def resolve_issue():
 @main_bp.route('/api/logs')
 def get_latest_logs():
     """Get latest system logs"""
-    # This implementation uses a log catcher that stores recent logs in memory
-    # Create a class to capture logs
+    logs = get_latest_logs_data()
+    return jsonify(logs)
+
+def get_latest_logs_data():
+    """Helper function to get the latest logs data"""
     import logging
     import time
     from datetime import datetime
@@ -135,4 +192,4 @@ def get_latest_logs():
             {"timestamp": current_time, "level": "INFO", "source": "resolver", "message": "Issue marked as resolved"}
         ]
     
-    return jsonify(logs) 
+    return logs 

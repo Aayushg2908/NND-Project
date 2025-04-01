@@ -149,6 +149,15 @@ def collect_metrics():
                 f"Latency={network_status['latency']}ms, " +
                 f"Packet Loss={network_status['packet_loss']}%")
     
+    # Emit network status update via Socket.IO
+    try:
+        from app import socketio
+        socketio.emit('network_status_update', network_status)
+        socketio.emit('devices_update', devices)
+    except ImportError:
+        # If unable to import socketio (like in testing), just continue
+        pass
+    
     # Check for anomalies
     try:
         from app.models.anomaly_detector import AnomalyDetector

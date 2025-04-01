@@ -476,15 +476,6 @@
             // Set up refresh buttons
             document.getElementById('refreshDevices').addEventListener('click', loadDevices);
             document.getElementById('refreshIssues').addEventListener('click', loadIssues);
-            
-            // Auto-refresh every 10 seconds
-            setInterval(() => {
-                loadDevices();
-                loadIssues();
-                loadResolvedIssues();
-                loadSystemLogs();
-                checkNetworkStatus();
-            }, 10000);
         });
     </script>
 </body>

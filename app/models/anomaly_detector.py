@@ -109,14 +109,6 @@ class AnomalyDetector:
                     'connection_timeout', 'security_breach', 'device_failure'
                 ])
                 
-                # Reduce bandwidth_saturation frequency
-                if anomaly_type == 'bandwidth_saturation' and random.random() < 0.7:
-                    anomaly_type = random.choice([
-                        'high_latency', 'packet_loss', 'general_anomaly',
-                        'dns_resolution_failure', 'routing_loop',
-                        'connection_timeout', 'security_breach', 'device_failure'
-                    ])
-                
                 anomalies = []
                 if anomaly_type == 'high_latency':
                     anomalies.append({
@@ -240,15 +232,6 @@ class AnomalyDetector:
                 'dns_resolution_failure', 'routing_loop', 'bandwidth_saturation',
                 'connection_timeout', 'security_breach', 'device_failure'
             ])
-            
-            # Modify to reduce bandwidth_saturation frequency
-            # If bandwidth_saturation is selected, 70% chance to replace it with something else
-            if anomaly_type == 'bandwidth_saturation' and random.random() < 0.7:
-                anomaly_type = random.choice([
-                    'high_latency', 'packet_loss', 'general_anomaly',
-                    'dns_resolution_failure', 'routing_loop',
-                    'connection_timeout', 'security_breach', 'device_failure'
-                ])
             
             if anomaly_type == 'high_latency' or (network_status['latency'] > 200 and not anomalies):
                 anomalies.append({

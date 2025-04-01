@@ -23,6 +23,37 @@ logging.basicConfig(
 )
 logger = logging.getLogger('network_resolver')
 
+# Add a special handler for Socket.IO
+class SocketIOLogHandler(logging.Handler):
+    """Custom log handler that emits log entries via Socket.IO"""
+    def emit(self, record):
+        try:
+            # Lazy import to avoid circular import
+            from app import socketio
+            
+            # Format the log message
+            log_entry = {
+                "timestamp": datetime.now().isoformat(),
+                "level": record.levelname,
+                "source": record.name,
+                "message": record.getMessage()
+            }
+            
+            # Emit via Socket.IO
+            socketio.emit('log_entry', log_entry)
+        except Exception:
+            # If there's an error, we don't want to interrupt the logging process
+            pass
+
+# Add Socket.IO handler to root logger
+try:
+    root_logger = logging.getLogger()
+    socketio_handler = SocketIOLogHandler()
+    socketio_handler.setLevel(logging.INFO)
+    root_logger.addHandler(socketio_handler)
+except Exception as e:
+    logger.error(f"Error setting up SocketIO log handler: {e}")
+
 # Define file paths
 DATA_DIR = os.path.join('data', 'healing')
 ISSUES_FILE = os.path.join(DATA_DIR, 'active_issues.json')
@@ -44,9 +75,39 @@ class NetworkResolver:
         self.resolution_history = []
         self._load_resolution_history()
         
+        # Initialize callback functions
+        self.update_callbacks = []
+        self.resolution_callbacks = []
+        
         # Start the pending issues checker thread
         self.pending_checker_thread = threading.Thread(target=self._check_pending_issues, daemon=True)
         self.pending_checker_thread.start()
+    
+    def register_update_callback(self, callback):
+        """Register a callback function to be called when active issues change"""
+        if callback not in self.update_callbacks:
+            self.update_callbacks.append(callback)
+    
+    def register_resolution_callback(self, callback):
+        """Register a callback function to be called when issues are resolved"""
+        if callback not in self.resolution_callbacks:
+            self.resolution_callbacks.append(callback)
+    
+    def _trigger_update_callbacks(self):
+        """Trigger all registered update callbacks"""
+        for callback in self.update_callbacks:
+            try:
+                callback()
+            except Exception as e:
+                logger.error(f"Error in update callback: {e}")
+    
+    def _trigger_resolution_callbacks(self):
+        """Trigger all registered resolution callbacks"""
+        for callback in self.resolution_callbacks:
+            try:
+                callback()
+            except Exception as e:
+                logger.error(f"Error in resolution callback: {e}")
     
     def _load_active_issues(self):
         """Force reload active issues from file"""
@@ -61,6 +122,8 @@ class NetworkResolver:
         """Save active issues to file"""
         with open(ISSUES_FILE, 'w') as f:
             json.dump(self.active_issues, f, indent=2)
+        # Trigger update callbacks
+        self._trigger_update_callbacks()
     
     def _save_resolution_history(self):
         """Save resolution history to file"""
@@ -73,6 +136,8 @@ class NetworkResolver:
                 with open(HISTORY_FILE, 'w') as f:
                     json.dump(self.resolution_history, f, indent=2)
                 logger.info(f"Saved {len(self.resolution_history)} items to resolution history")
+                # Trigger resolution callbacks
+                self._trigger_resolution_callbacks()
             else:
                 logger.warning("No resolution history to save")
         except Exception as e:
@@ -211,7 +276,7 @@ class NetworkResolver:
         if issue['status'] == 'new' and random.random() < 0.7 and not issue.get('manual_resolution'):  # 70% chance to defer immediate resolution
             logger.info(f"Deferring immediate resolution of issue {issue_id} for demonstration")
             issue['status'] = 'pending'
-            self._save_active_issues()
+            self._save_active_issues()  # This will trigger update callbacks
             return {'success': True, 'message': "Resolution deferred for demonstration"}
         
         logger.info(f"Attempting to resolve issue {issue_id}")
@@ -219,7 +284,7 @@ class NetworkResolver:
         # Update issue status
         issue['status'] = 'resolving'
         issue['resolution_attempts'] += 1
-        self._save_active_issues()
+        self._save_active_issues()  # This will trigger update callbacks
         
         # Get resolution strategy based on anomaly type
         resolution_strategy = self._get_resolution_strategy(issue)
@@ -231,6 +296,7 @@ class NetworkResolver:
             'commands': resolution_strategy['commands'].copy() if 'commands' in resolution_strategy else []
         }
         issue['resolution_actions'].append(action)
+        self._save_active_issues()  # This will trigger update callbacks to show real-time command execution
         
         # Execute resolution commands
         success = True
@@ -292,16 +358,18 @@ class NetworkResolver:
             if random.random() < 0.6 and not issue.get('manual_resolution'):  # 60% chance to mark as pending for automatic resolutions
                 issue['status'] = 'pending'
                 logger.info(f"Issue {issue_id} marked as pending for user demonstration - needs manual resolution")
+                self._save_active_issues()  # Trigger update callbacks
             elif strategy_success_rate > random.random():
                 issue['status'] = 'resolved'
                 logger.info(f"Issue {issue_id} marked as resolved")
                 # Remove resolved issue immediately
                 self.active_issues.pop(issue_id)
-                self._save_active_issues()
+                self._save_active_issues()  # Trigger update callbacks
                 logger.info(f"Issue {issue_id} removed from active issues")
             else:
                 issue['status'] = 'pending'
                 logger.info(f"Issue {issue_id} marked as pending - needs verification")
+                self._save_active_issues()  # Trigger update callbacks
         else:
             # For demo, still give a chance of success even if commands failed
             if random.random() < 0.2:  # Reduced from 0.3 to keep more issues visible
@@ -309,11 +377,12 @@ class NetworkResolver:
                 logger.info(f"Issue {issue_id} eventually resolved despite command failures")
                 # Remove resolved issue immediately
                 self.active_issues.pop(issue_id)
-                self._save_active_issues()
+                self._save_active_issues()  # Trigger update callbacks
                 logger.info(f"Issue {issue_id} removed from active issues")
             else:
                 issue['status'] = 'failed'
                 logger.warning(f"Issue {issue_id} resolution failed")
+                self._save_active_issues()  # Trigger update callbacks
         
         # Save changes
         self._save_active_issues()
@@ -486,7 +555,7 @@ class NetworkResolver:
                         'echo "Simulating: Monitoring bandwidth utilization..."'
                     ],
                     'verification_wait': 1,
-                    'success_rate': 0.9
+                    'success_rate': 0.75
                 }
             else:
                 return {
@@ -498,7 +567,7 @@ class NetworkResolver:
                         'echo "Throttling non-essential traffic..."'
                     ],
                     'verification_wait': 2,
-                    'success_rate': 0.85
+                    'success_rate': 0.65
                 }
                 
         elif anomaly_type == 'connection_timeout':
@@ -628,6 +697,11 @@ class NetworkResolver:
                 
                 # Log count of active and resolved issues
                 logger.info(f"Active issues: {len(self.active_issues)}, Resolved issues: {len(self.resolution_history)}")
+                
+                # Emit status updates
+                self._trigger_update_callbacks()
+                self._trigger_resolution_callbacks()
+                
             except Exception as e:
                 logger.error(f"Error checking pending issues: {e}")
             

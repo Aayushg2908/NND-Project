@@ -1,5 +1,9 @@
 from flask import Flask
 import os
+from flask_socketio import SocketIO
+
+# Create the SocketIO instance outside the factory function
+socketio = SocketIO()
 
 def create_app():
     """Application factory function"""
@@ -11,5 +15,8 @@ def create_app():
     # Register blueprints
     from app.routes import main_bp
     app.register_blueprint(main_bp)
+    
+    # Initialize SocketIO with the app
+    socketio.init_app(app, cors_allowed_origins="*")
     
     return app 
