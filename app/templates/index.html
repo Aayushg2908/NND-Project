@@ -120,27 +120,17 @@
                 </div>
             </div>
             
-            <!-- Network Devices Section -->
+            <!-- System Logs Section -->
             <div class="col-md-6">
                 <div class="card dashboard-card">
                     <div class="card-header d-flex justify-content-between align-items-center bg-white">
-                        <h5 class="mb-0">Network Devices</h5>
-                        <button id="refreshDevices" class="btn btn-sm btn-outline-primary">Refresh</button>
+                        <h5 class="mb-0">System Logs</h5>
+                        <button id="refreshLogs" class="btn btn-sm btn-outline-primary">Refresh</button>
                     </div>
                     <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-striped table-hover">
-                                <thead>
-                                    <tr>
-                                        <th>Device</th>
-                                        <th>IP Address</th>
-                                        <th>Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="devicesList">
-                                    <!-- Devices will be loaded here -->
-                                </tbody>
-                            </table>
+                        <div id="systemLogs" class="event-log">
+                            <!-- Logs will be loaded here -->
+                            <div class="text-center text-muted py-3">No logs available.</div>
                         </div>
                     </div>
                 </div>
@@ -149,7 +139,7 @@
         
         <div class="row">
             <!-- Resolved Issues Section -->
-            <div class="col-md-6">
+            <div class="col-md-12">
                 <div class="card dashboard-card">
                     <div class="card-header bg-white">
                         <h5 class="mb-0">Resolved Issues</h5>
@@ -158,21 +148,6 @@
                         <div id="resolvedIssuesList" class="resolved-issues-list">
                             <!-- Resolved issues will be loaded here -->
                             <div class="text-center text-muted py-3">No resolved issues yet.</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- System Logs Section -->
-            <div class="col-md-6">
-                <div class="card dashboard-card">
-                    <div class="card-header bg-white">
-                        <h5 class="mb-0">System Logs</h5>
-                    </div>
-                    <div class="card-body">
-                        <div id="systemLogs" class="event-log">
-                            <!-- Logs will be loaded here -->
-                            <div class="text-center text-muted py-3">No logs available.</div>
                         </div>
                     </div>
                 </div>
@@ -442,27 +417,6 @@
             );
         });
         
-        // Handle device updates
-        socket.on('devices_update', function(devices) {
-            console.log('Received devices update');
-            
-            const devicesList = document.getElementById('devicesList');
-            devicesList.innerHTML = '';
-            
-            devices.forEach(device => {
-                const row = document.createElement('tr');
-                let statusClass = device.status === 'up' ? 'success' : 
-                                  device.status === 'warning' ? 'warning' : 'danger';
-                
-                row.innerHTML = `
-                    <td>${device.hostname || device.name}</td>
-                    <td>${device.ip}</td>
-                    <td><span class="badge bg-${statusClass}">${device.status}</span></td>
-                `;
-                devicesList.appendChild(row);
-            });
-        });
-
         // Initialize date formatter
         function formatDate(dateString) {
             const date = new Date(dateString);
@@ -490,31 +444,6 @@
                 statusIndicator.classList.add('status-critical');
                 statusText.textContent = 'Network Status: Critical';
             }
-        }
-
-        // Load devices list
-        function loadDevices() {
-            fetch('/api/network/devices')
-                .then(response => response.json())
-                .then(devices => {
-                    const devicesList = document.getElementById('devicesList');
-                    devicesList.innerHTML = '';
-                    
-                    devices.forEach(device => {
-                        const row = document.createElement('tr');
-                        let statusClass = 'success';
-                        if (device.status === 'warning') statusClass = 'warning';
-                        if (device.status === 'error' || device.status === 'down') statusClass = 'danger';
-                        
-                        row.innerHTML = `
-                            <td>${device.name}</td>
-                            <td>${device.ip}</td>
-                            <td><span class="badge bg-${statusClass}">${device.status}</span></td>
-                        `;
-                        devicesList.appendChild(row);
-                    });
-                })
-                .catch(error => console.error('Error loading devices:', error));
         }
 
         // Load active issues
@@ -769,15 +698,13 @@
 
         // Initial load
         document.addEventListener('DOMContentLoaded', function() {
-            loadDevices();
             loadIssues();
             loadResolvedIssues();
             loadSystemLogs();
-            checkNetworkStatus();
             
-            // Set up refresh buttons
-            document.getElementById('refreshDevices').addEventListener('click', loadDevices);
+            // Set up refresh button event listeners
             document.getElementById('refreshIssues').addEventListener('click', loadIssues);
+            document.getElementById('refreshLogs').addEventListener('click', loadSystemLogs);
         });
         
         // Add a heartbeat to keep connection alive
