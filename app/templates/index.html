@@ -186,13 +186,15 @@
     <!-- Include Socket.IO client library -->
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script>
-        // Initialize Socket.IO connection with connection options
+        // Initialize Socket.IO connection with improved connection options
         const socket = io({
             reconnection: true,
             reconnectionAttempts: Infinity,
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000,
-            timeout: 20000
+            timeout: 20000,
+            // Force new connection to avoid reusing potentially problematic connections
+            forceNew: true
         });
         
         // Socket status indicator element
@@ -235,6 +237,10 @@
             console.log(`Reconnected after ${attemptNumber} attempts`);
             socketStatus.className = 'socket-connected';
             socketStatus.textContent = 'Connected';
+            
+            // Request fresh data after reconnection
+            console.log('Requesting data refresh after reconnection');
+            socket.emit('request_data_refresh');
         });
         
         // Handle real-time active issues updates
@@ -773,6 +779,14 @@
             document.getElementById('refreshDevices').addEventListener('click', loadDevices);
             document.getElementById('refreshIssues').addEventListener('click', loadIssues);
         });
+        
+        // Add a heartbeat to keep connection alive
+        setInterval(function() {
+            if (socket.connected) {
+                console.log('Sending heartbeat ping');
+                socket.emit('ping');
+            }
+        }, 25000);
     </script>
 </body>
-</html> 
+</html>

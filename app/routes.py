@@ -75,7 +75,18 @@ def register_socketio_callbacks():
 def handle_connect():
     """Handle client connection"""
     print("Client connected")
+    # Register callbacks on each new connection to ensure they're active
+    register_socketio_callbacks()
     # Send initial data on connection
+    emit_active_issues()
+    emit_resolved_issues()
+    emit_logs()
+    emit_network_status()
+
+@socketio.on('request_data_refresh')
+def handle_data_refresh():
+    """Handle client request for data refresh"""
+    print("Client requested data refresh")
     emit_active_issues()
     emit_resolved_issues()
     emit_logs()
@@ -85,6 +96,12 @@ def handle_connect():
 def handle_disconnect():
     """Handle client disconnection"""
     print("Client disconnected")
+
+@socketio.on('ping')
+def handle_ping():
+    """Handle ping from client to keep connection alive"""
+    # Just acknowledge the ping, no need to send data
+    pass
 
 # Register callbacks after all functions are defined
 register_socketio_callbacks()

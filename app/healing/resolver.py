@@ -142,7 +142,7 @@ class NetworkResolver:
                 with open(HISTORY_FILE, 'w') as f:
                     json.dump(self.resolution_history, f, indent=2)
                 logger.info(f"Saved {len(self.resolution_history)} items to resolution history")
-                # Trigger resolution callbacks
+                # Always trigger resolution callbacks after saving
                 self._trigger_resolution_callbacks()
             else:
                 logger.warning("No resolution history to save")
@@ -371,6 +371,7 @@ class NetworkResolver:
                 # Remove resolved issue immediately
                 self.active_issues.pop(issue_id)
                 self._save_active_issues()  # Trigger update callbacks
+                self._trigger_update_callbacks()  # Trigger update callbacks
                 logger.info(f"Issue {issue_id} removed from active issues")
             else:
                 issue['status'] = 'pending'
@@ -384,6 +385,7 @@ class NetworkResolver:
                 # Remove resolved issue immediately
                 self.active_issues.pop(issue_id)
                 self._save_active_issues()  # Trigger update callbacks
+                self._trigger_update_callbacks()  # Trigger update callbacks
                 logger.info(f"Issue {issue_id} removed from active issues")
             else:
                 issue['status'] = 'failed'
@@ -392,6 +394,10 @@ class NetworkResolver:
         
         # Save changes
         self._save_active_issues()
+        
+        # Create a copy of the issue for history before any modifications
+        # This ensures we don't lose any data if the issue is removed from active_issues
+        issue_copy = json.loads(json.dumps(issue))
         
         # Add to resolution history
         history_entry = {
@@ -414,6 +420,12 @@ class NetworkResolver:
         
         # Save immediately to ensure it's persisted
         self._save_resolution_history()
+        
+        # Explicitly trigger resolution callbacks to ensure real-time updates
+        self._trigger_resolution_callbacks()
+        
+        # Ensure active issues update is also triggered
+        self._trigger_update_callbacks()
         
         return {'success': success, 'message': '\n'.join(result_messages)}
     
