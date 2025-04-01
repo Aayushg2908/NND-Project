@@ -54,6 +54,26 @@
             font-size: 0.85rem;
             margin-right: 15px;
         }
+        
+        #socket-status {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            z-index: 1000;
+        }
+        
+        .socket-connected {
+            background-color: #28a745;
+            color: white;
+        }
+        
+        .socket-disconnected {
+            background-color: #dc3545;
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -160,7 +180,283 @@
         </div>
     </div>
 
+    <!-- Socket.IO connection status indicator -->
+    <div id="socket-status" class="socket-disconnected">Disconnected</div>
+
+    <!-- Include Socket.IO client library -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script>
+        // Initialize Socket.IO connection with connection options
+        const socket = io({
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            timeout: 20000
+        });
+        
+        // Socket status indicator element
+        const socketStatus = document.getElementById('socket-status');
+        
+        // Socket.IO event handlers
+        socket.on('connect', function() {
+            console.log('Connected to server via Socket.IO');
+            socketStatus.className = 'socket-connected';
+            socketStatus.textContent = 'Connected';
+            
+            // Immediately request data updates
+            console.log('Requesting initial data after connection');
+            // Fetch all data on reconnection
+            loadIssues();
+            loadResolvedIssues();
+            loadSystemLogs();
+            checkNetworkStatus();
+        });
+        
+        socket.on('disconnect', function() {
+            console.log('Disconnected from server');
+            socketStatus.className = 'socket-disconnected';
+            socketStatus.textContent = 'Disconnected';
+        });
+        
+        socket.on('connect_error', function(error) {
+            console.error('Connection error:', error);
+            socketStatus.className = 'socket-disconnected';
+            socketStatus.textContent = 'Connection Error';
+        });
+        
+        socket.on('reconnect_attempt', function(attemptNumber) {
+            console.log(`Reconnection attempt #${attemptNumber}`);
+            socketStatus.className = 'socket-disconnected';
+            socketStatus.textContent = `Reconnecting (#${attemptNumber})`;
+        });
+        
+        socket.on('reconnect', function(attemptNumber) {
+            console.log(`Reconnected after ${attemptNumber} attempts`);
+            socketStatus.className = 'socket-connected';
+            socketStatus.textContent = 'Connected';
+        });
+        
+        // Handle real-time active issues updates
+        socket.on('active_issues_update', function(issues) {
+            console.log('Received active issues update:', issues);
+            
+            const issuesList = document.getElementById('issuesList');
+            
+            if (!issues || issues.length === 0) {
+                issuesList.innerHTML = '<div class="alert alert-info">No active issues detected.</div>';
+                updateActiveIssuesCount(0);
+                return;
+            }
+            
+            issuesList.innerHTML = '';
+            issues.forEach(issue => {
+                const issueElement = document.createElement('div');
+                issueElement.className = 'alert alert-warning';
+                issueElement.innerHTML = `
+                    <h5>${issue.title}</h5>
+                    <p>${issue.description}</p>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="badge bg-secondary">${issue.status}</span>
+                        <small>Detected: ${formatDate(issue.detected_at)}</small>
+                        <button class="btn btn-sm btn-primary resolve-issue" data-id="${issue.id}">
+                            Resolve
+                        </button>
+                    </div>
+                `;
+                issuesList.appendChild(issueElement);
+            });
+            
+            // Add event listeners to resolve buttons
+            document.querySelectorAll('.resolve-issue').forEach(button => {
+                button.addEventListener('click', function(event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const issueId = this.getAttribute('data-id');
+                    console.log("Resolve button clicked with ID:", issueId);
+                    resolveIssue(issueId);
+                });
+            });
+            
+            // Update stats
+            updateActiveIssuesCount(issues.length);
+        });
+        
+        // Handle real-time resolved issues updates
+        socket.on('resolved_issues_update', function(history) {
+            console.log('Received resolved issues update:', history);
+            
+            const resolvedList = document.getElementById('resolvedIssuesList');
+            
+            if (!history || !Array.isArray(history) || history.length === 0) {
+                resolvedList.innerHTML = '<div class="text-center text-muted py-3">No resolved issues yet.</div>';
+                updateResolvedIssuesCount(0);
+                return;
+            }
+            
+            resolvedList.innerHTML = '';
+            
+            // Sort by most recent first
+            history.sort((a, b) => new Date(b.resolved_at || b.detected_at) - new Date(a.resolved_at || a.detected_at));
+            
+            // Count real resolved issues
+            const resolvedCount = history.filter(item => item.resolution_success).length;
+            
+            // Keep track of how many we actually displayed
+            let displayedCount = 0;
+            
+            // Display only the most recent 10 issues
+            history.slice(0, 10).forEach(item => {
+                if (!item.resolved_at) {
+                    return; // Skip unresolved items
+                }
+                
+                displayedCount++;
+                const issueElement = document.createElement('div');
+                issueElement.className = 'resolved-issue';
+                
+                // Format the actions text
+                let actionsText = '';
+                if (item.resolution_actions && item.resolution_actions.length > 0) {
+                    const lastAction = item.resolution_actions[item.resolution_actions.length - 1];
+                    actionsText = `<br><small>Strategy: ${lastAction.strategy}</small>`;
+                }
+                
+                issueElement.innerHTML = `
+                    <div class="d-flex justify-content-between">
+                        <h6 class="mb-1">${getIssueTitle(item.anomaly_type)}</h6>
+                        <span class="badge bg-success">Resolved</span>
+                    </div>
+                    <p class="mb-1 text-muted">
+                        <small>Detected: ${formatDate(item.detected_at)}</small>
+                        <br>
+                        <small>Resolved: ${formatDate(item.resolved_at)}</small>
+                        ${actionsText}
+                    </p>
+                `;
+                resolvedList.appendChild(issueElement);
+            });
+            
+            // If we got no displayable items but there are items in history
+            if (displayedCount === 0 && history.length > 0) {
+                resolvedList.innerHTML = '<div class="alert alert-warning">Found issues in history but none are fully resolved yet.</div>';
+            }
+            
+            // Update stats
+            updateResolvedIssuesCount(resolvedCount);
+        });
+        
+        // Handle real-time logs updates
+        socket.on('logs_update', function(logs) {
+            console.log('Received logs update');
+            
+            const logsContainer = document.getElementById('systemLogs');
+            
+            if (!logs || logs.length === 0) {
+                logsContainer.innerHTML = '<div class="text-center text-muted py-3">No logs available.</div>';
+                return;
+            }
+            
+            logsContainer.innerHTML = '';
+            
+            // Sort by most recent first
+            logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
+            logs.forEach(log => {
+                const logEntry = document.createElement('div');
+                let logClass = 'log-info';
+                
+                if (log.level === 'WARNING') logClass = 'log-warning';
+                if (log.level === 'ERROR') logClass = 'log-error';
+                
+                logEntry.className = `log-entry ${logClass}`;
+                logEntry.innerHTML = `
+                    <div class="d-flex justify-content-between">
+                        <small>${formatDate(log.timestamp)}</small>
+                        <span class="badge ${log.level === 'INFO' ? 'bg-info' : log.level === 'WARNING' ? 'bg-warning' : 'bg-danger'}">${log.level}</span>
+                    </div>
+                    <div class="mt-1">
+                        <strong>[${log.source}]</strong> ${log.message}
+                    </div>
+                `;
+                logsContainer.appendChild(logEntry);
+            });
+        });
+        
+        // Handle individual log entries
+        socket.on('log_entry', function(log) {
+            console.log('Received new log entry');
+            
+            const logsContainer = document.getElementById('systemLogs');
+            
+            // Remove placeholder if it exists
+            if (logsContainer.innerHTML.includes('No logs available')) {
+                logsContainer.innerHTML = '';
+            }
+            
+            const logEntry = document.createElement('div');
+            let logClass = 'log-info';
+            
+            if (log.level === 'WARNING') logClass = 'log-warning';
+            if (log.level === 'ERROR') logClass = 'log-error';
+            
+            logEntry.className = `log-entry ${logClass}`;
+            logEntry.innerHTML = `
+                <div class="d-flex justify-content-between">
+                    <small>${formatDate(log.timestamp)}</small>
+                    <span class="badge ${log.level === 'INFO' ? 'bg-info' : log.level === 'WARNING' ? 'bg-warning' : 'bg-danger'}">${log.level}</span>
+                </div>
+                <div class="mt-1">
+                    <strong>[${log.source}]</strong> ${log.message}
+                </div>
+            `;
+            
+            // Add at the beginning (most recent first)
+            if (logsContainer.firstChild) {
+                logsContainer.insertBefore(logEntry, logsContainer.firstChild);
+            } else {
+                logsContainer.appendChild(logEntry);
+            }
+            
+            // Limit number of logs displayed
+            while (logsContainer.children.length > 50) {
+                logsContainer.removeChild(logsContainer.lastChild);
+            }
+        });
+        
+        // Handle network status updates
+        socket.on('network_status_update', function(status) {
+            console.log('Received network status update');
+            
+            // Update dashboard header
+            updateDashboardStats(
+                document.getElementById('active-issues-count').textContent,
+                document.getElementById('resolved-issues-count').textContent,
+                status.overall_health
+            );
+        });
+        
+        // Handle device updates
+        socket.on('devices_update', function(devices) {
+            console.log('Received devices update');
+            
+            const devicesList = document.getElementById('devicesList');
+            devicesList.innerHTML = '';
+            
+            devices.forEach(device => {
+                const row = document.createElement('tr');
+                let statusClass = device.status === 'up' ? 'success' : 
+                                  device.status === 'warning' ? 'warning' : 'danger';
+                
+                row.innerHTML = `
+                    <td>${device.hostname || device.name}</td>
+                    <td>${device.ip}</td>
+                    <td><span class="badge bg-${statusClass}">${device.status}</span></td>
+                `;
+                devicesList.appendChild(row);
+            });
+        });
+
         // Initialize date formatter
         function formatDate(dateString) {
             const date = new Date(dateString);

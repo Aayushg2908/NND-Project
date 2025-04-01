@@ -39,8 +39,8 @@ class SocketIOLogHandler(logging.Handler):
                 "message": record.getMessage()
             }
             
-            # Emit via Socket.IO
-            socketio.emit('log_entry', log_entry)
+            # Emit via Socket.IO (without broadcast parameter)
+            socketio.emit('log_entry', log_entry, namespace='/')
         except Exception:
             # If there's an error, we don't want to interrupt the logging process
             pass
@@ -95,17 +95,23 @@ class NetworkResolver:
     
     def _trigger_update_callbacks(self):
         """Trigger all registered update callbacks"""
+        logger.info(f"Triggering {len(self.update_callbacks)} update callbacks...")
         for callback in self.update_callbacks:
             try:
+                logger.info(f"Executing update callback: {callback.__name__ if hasattr(callback, '__name__') else 'anonymous'}")
                 callback()
+                logger.info(f"Successfully executed update callback")
             except Exception as e:
                 logger.error(f"Error in update callback: {e}")
     
     def _trigger_resolution_callbacks(self):
         """Trigger all registered resolution callbacks"""
+        logger.info(f"Triggering {len(self.resolution_callbacks)} resolution callbacks...")
         for callback in self.resolution_callbacks:
             try:
+                logger.info(f"Executing resolution callback: {callback.__name__ if hasattr(callback, '__name__') else 'anonymous'}")
                 callback()
+                logger.info(f"Successfully executed resolution callback")
             except Exception as e:
                 logger.error(f"Error in resolution callback: {e}")
     

@@ -3,7 +3,8 @@ import os
 from flask_socketio import SocketIO
 
 # Create the SocketIO instance outside the factory function
-socketio = SocketIO()
+# Enable async_mode='eventlet' for better performance and configure CORS
+socketio = SocketIO(cors_allowed_origins="*", ping_timeout=60, ping_interval=25, async_mode='threading')
 
 def create_app():
     """Application factory function"""
@@ -17,6 +18,6 @@ def create_app():
     app.register_blueprint(main_bp)
     
     # Initialize SocketIO with the app
-    socketio.init_app(app, cors_allowed_origins="*")
+    socketio.init_app(app)
     
     return app 

@@ -13,7 +13,64 @@ main_bp = Blueprint('main', __name__)
 anomaly_detector = AnomalyDetector()
 network_resolver = NetworkResolver()
 
-# Socket.IO event handlers
+# Helper functions to emit Socket.IO events
+def emit_active_issues():
+    """Emit active issues to all clients"""
+    try:
+        print("Emitting active issues update...")
+        issues = network_resolver.get_active_issues()
+        print(f"Active issues count: {len(issues)}")
+        socketio.emit('active_issues_update', issues, namespace='/')
+        print("Active issues emission completed")
+    except Exception as e:
+        print(f"Error emitting active issues: {e}")
+
+def emit_resolved_issues():
+    """Emit resolved issues to all clients"""
+    try:
+        print("Emitting resolved issues update...")
+        # Force reload the resolution history from file to ensure we have the latest data
+        network_resolver._load_resolution_history()
+        
+        history = []
+        if os.path.exists(os.path.join('data', 'healing', 'resolution_history.json')):
+            try:
+                with open(os.path.join('data', 'healing', 'resolution_history.json'), 'r') as f:
+                    history = json.load(f)
+            except Exception as e:
+                print(f"Error loading resolution history: {e}")
+        
+        print(f"Resolved issues count: {len(history)}")
+        socketio.emit('resolved_issues_update', history, namespace='/')
+        print("Resolved issues emission completed")
+    except Exception as e:
+        print(f"Error emitting resolved issues: {e}")
+
+def emit_logs():
+    """Emit system logs to all clients"""
+    logs = get_latest_logs_data()
+    socketio.emit('logs_update', logs, namespace='/')
+
+def emit_network_status():
+    """Emit network status to all clients"""
+    status = get_network_status()
+    socketio.emit('network_status_update', status, namespace='/')
+
+# Function to ensure callbacks are registered - now defined after the functions it uses
+def register_socketio_callbacks():
+    """Register all Socket.IO callbacks with the NetworkResolver"""
+    print("Registering Socket.IO callbacks with NetworkResolver...")
+    # Clear any existing callbacks to avoid duplicates
+    network_resolver.update_callbacks = []
+    network_resolver.resolution_callbacks = []
+    
+    # Register callbacks
+    network_resolver.register_update_callback(emit_active_issues)
+    network_resolver.register_resolution_callback(emit_resolved_issues)
+    print(f"Registered {len(network_resolver.update_callbacks)} update callbacks")
+    print(f"Registered {len(network_resolver.resolution_callbacks)} resolution callbacks")
+
+# Socket.IO event handlers - moved after the function definitions
 @socketio.on('connect')
 def handle_connect():
     """Handle client connection"""
@@ -29,36 +86,8 @@ def handle_disconnect():
     """Handle client disconnection"""
     print("Client disconnected")
 
-# Helper functions to emit Socket.IO events
-def emit_active_issues():
-    """Emit active issues to all clients"""
-    issues = network_resolver.get_active_issues()
-    socketio.emit('active_issues_update', issues)
-
-def emit_resolved_issues():
-    """Emit resolved issues to all clients"""
-    history = []
-    if os.path.exists(os.path.join('data', 'healing', 'resolution_history.json')):
-        try:
-            with open(os.path.join('data', 'healing', 'resolution_history.json'), 'r') as f:
-                history = json.load(f)
-        except Exception as e:
-            print(f"Error loading resolution history: {e}")
-    socketio.emit('resolved_issues_update', history)
-
-def emit_logs():
-    """Emit system logs to all clients"""
-    logs = get_latest_logs_data()
-    socketio.emit('logs_update', logs)
-
-def emit_network_status():
-    """Emit network status to all clients"""
-    status = get_network_status()
-    socketio.emit('network_status_update', status)
-
-# Register these emit functions with the NetworkResolver for callbacks
-network_resolver.register_update_callback(emit_active_issues)
-network_resolver.register_resolution_callback(emit_resolved_issues)
+# Register callbacks after all functions are defined
+register_socketio_callbacks()
 
 @main_bp.route('/')
 def index():

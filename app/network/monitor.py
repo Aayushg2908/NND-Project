@@ -152,8 +152,8 @@ def collect_metrics():
     # Emit network status update via Socket.IO
     try:
         from app import socketio
-        socketio.emit('network_status_update', network_status)
-        socketio.emit('devices_update', devices)
+        socketio.emit('network_status_update', network_status, namespace='/')
+        socketio.emit('devices_update', devices, namespace='/')
     except ImportError:
         # If unable to import socketio (like in testing), just continue
         pass
@@ -171,6 +171,18 @@ def collect_metrics():
             resolver = NetworkResolver()
             for anomaly in anomalies:
                 resolver.handle_anomaly(anomaly)
+            
+            # Explicitly emit active issues after handling anomalies
+            try:
+                # Use lazy import to avoid circular dependencies
+                import importlib
+                routes_module = importlib.import_module('app.routes')
+                print("Explicitly emitting active issues after anomaly detection")
+                routes_module.emit_active_issues()
+                routes_module.emit_logs()
+            except Exception as e:
+                logger.error(f"Error explicitly emitting active issues: {e}")
+                
     except Exception as e:
         logger.error(f"Error in anomaly detection: {e}")
     
