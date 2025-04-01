@@ -9,8 +9,18 @@ from datetime import datetime
 import threading
 import random
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Set up logging to both console and file
+if not os.path.exists('logs'):
+    os.makedirs('logs')
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('logs/app.log'),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger('network_resolver')
 
 # Define file paths
@@ -32,12 +42,7 @@ class NetworkResolver:
         
         # Load resolution history
         self.resolution_history = []
-        if os.path.exists(HISTORY_FILE):
-            try:
-                with open(HISTORY_FILE, 'r') as f:
-                    self.resolution_history = json.load(f)
-            except Exception as e:
-                logger.error(f"Error loading resolution history: {e}")
+        self._load_resolution_history()
         
         # Start the pending issues checker thread
         self.pending_checker_thread = threading.Thread(target=self._check_pending_issues, daemon=True)
@@ -59,8 +64,45 @@ class NetworkResolver:
     
     def _save_resolution_history(self):
         """Save resolution history to file"""
-        with open(HISTORY_FILE, 'w') as f:
-            json.dump(self.resolution_history, f, indent=2)
+        try:
+            # Create directory if it doesn't exist
+            os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
+            
+            # Only save non-empty history
+            if self.resolution_history:
+                with open(HISTORY_FILE, 'w') as f:
+                    json.dump(self.resolution_history, f, indent=2)
+                logger.info(f"Saved {len(self.resolution_history)} items to resolution history")
+            else:
+                logger.warning("No resolution history to save")
+        except Exception as e:
+            logger.error(f"Error saving resolution history: {e}")
+    
+    def _load_resolution_history(self):
+        """Force reload resolution history from file"""
+        if os.path.exists(HISTORY_FILE):
+            try:
+                with open(HISTORY_FILE, 'r') as f:
+                    loaded_history = json.load(f)
+                    if isinstance(loaded_history, list):
+                        self.resolution_history = loaded_history
+                        logger.info(f"Loaded {len(self.resolution_history)} items from resolution history")
+                    else:
+                        logger.error(f"Invalid resolution history format: expected list, got {type(loaded_history)}")
+            except Exception as e:
+                logger.error(f"Error loading resolution history: {e}")
+                # Create backup of corrupted file
+                if os.path.getsize(HISTORY_FILE) > 0:
+                    backup_file = f"{HISTORY_FILE}.bak.{int(time.time())}"
+                    try:
+                        import shutil
+                        shutil.copy2(HISTORY_FILE, backup_file)
+                        logger.info(f"Created backup of corrupted history file: {backup_file}")
+                    except Exception as backup_error:
+                        logger.error(f"Failed to create backup: {backup_error}")
+        else:
+            logger.info("No resolution history file found, starting with empty history")
+            self.resolution_history = []
     
     def handle_anomaly(self, anomaly):
         """Handle detected anomaly by creating an issue and attempting resolution"""
@@ -95,7 +137,13 @@ class NetworkResolver:
         titles = {
             'high_latency': 'High Network Latency Detected',
             'packet_loss': 'Packet Loss Issues Detected',
-            'general_anomaly': 'Network Anomaly Detected'
+            'general_anomaly': 'Network Anomaly Detected',
+            'dns_resolution_failure': 'DNS Resolution Failure',
+            'routing_loop': 'Network Routing Loop Detected',
+            'bandwidth_saturation': 'Bandwidth Saturation Warning',
+            'connection_timeout': 'Network Connection Timeout',
+            'security_breach': 'Potential Security Breach Detected',
+            'device_failure': 'Network Device Failure'
         }
         return titles.get(anomaly_type, 'Network Issue Detected')
     
@@ -109,6 +157,31 @@ class NetworkResolver:
         elif anomaly['type'] == 'packet_loss':
             packet_loss = anomaly['details']['packet_loss']
             return f"Packet loss of {packet_loss}% detected on the network."
+        
+        elif anomaly['type'] == 'dns_resolution_failure':
+            domain = anomaly['details'].get('domain', 'multiple domains')
+            return f"Failed to resolve {domain}. DNS resolution errors can cause connectivity issues."
+        
+        elif anomaly['type'] == 'routing_loop':
+            hops = anomaly['details'].get('hops', 'multiple hops')
+            return f"Detected a routing loop across {hops} nodes. This can cause packet loss and latency."
+        
+        elif anomaly['type'] == 'bandwidth_saturation':
+            usage = anomaly['details'].get('usage', '?')
+            threshold = anomaly['details'].get('threshold', '?')
+            return f"Network bandwidth usage ({usage}%) exceeds normal threshold ({threshold}%). This may cause slowdowns."
+        
+        elif anomaly['type'] == 'connection_timeout':
+            service = anomaly['details'].get('service', 'network service')
+            return f"Connection to {service} has timed out. Service may be unavailable."
+        
+        elif anomaly['type'] == 'security_breach':
+            source = anomaly['details'].get('source', 'unknown source')
+            return f"Detected potentially suspicious traffic from {source}. Security measures activated."
+        
+        elif anomaly['type'] == 'device_failure':
+            device = anomaly['details'].get('device', 'network device')
+            return f"Network device {device} has failed or is not responding."
         
         elif anomaly['type'] == 'general_anomaly':
             feature_str = ', '.join([f"{k}: {v:.2f}" for k, v in anomaly['details']['features'].items()])
@@ -135,7 +208,7 @@ class NetworkResolver:
         
         # For demo - randomly decide if we should defer auto-resolution to keep issues visible
         # This gives user time to see issues on the dashboard
-        if issue['status'] == 'new' and random.random() < 0.7:  # 70% chance to defer immediate resolution
+        if issue['status'] == 'new' and random.random() < 0.7 and not issue.get('manual_resolution'):  # 70% chance to defer immediate resolution
             logger.info(f"Deferring immediate resolution of issue {issue_id} for demonstration")
             issue['status'] = 'pending'
             self._save_active_issues()
@@ -199,7 +272,7 @@ class NetworkResolver:
         }
         
         # Wait for verification period
-        time.sleep(resolution_strategy.get('verification_wait', 2))
+        time.sleep(resolution_strategy.get('verification_wait', 1))
         
         # For simulation/demo, adjust success rates
         simulation_success_boost = 0.3  # Boost success rate by 30% for demo
@@ -210,8 +283,13 @@ class NetworkResolver:
             # For this demo, we'll assume success for some strategies
             strategy_success_rate = resolution_strategy.get('success_rate', 0.5) + simulation_success_boost
             
+            # For manual resolutions, increase success rate significantly
+            if issue.get('manual_resolution'):
+                strategy_success_rate = min(1.0, strategy_success_rate + 0.3)  # Add 30% but cap at 100%
+                logger.info(f"Manual resolution in progress - using boosted success rate: {strategy_success_rate}")
+            
             # For demonstration - occasionally leave issues pending for user interaction
-            if random.random() < 0.6:  # 60% chance to mark as pending even if technically successful
+            if random.random() < 0.6 and not issue.get('manual_resolution'):  # 60% chance to mark as pending for automatic resolutions
                 issue['status'] = 'pending'
                 logger.info(f"Issue {issue_id} marked as pending for user demonstration - needs manual resolution")
             elif strategy_success_rate > random.random():
@@ -249,14 +327,38 @@ class NetworkResolver:
             'resolution_success': issue['status'] == 'resolved',
             'resolution_actions': issue['resolution_actions']
         }
+        
+        # Log details about the history entry
+        logger.info(f"Adding issue to history: ID={history_entry['issue_id']}, Type={history_entry['anomaly_type']}, Success={history_entry['resolution_success']}")
+        
+        # Make sure we have the latest history before appending
+        self._load_resolution_history()
+        
+        # Add to resolution history
         self.resolution_history.append(history_entry)
+        
+        # Save immediately to ensure it's persisted
         self._save_resolution_history()
         
         return {'success': success, 'message': '\n'.join(result_messages)}
     
     def resolve_issue(self, issue_id):
         """Manually resolve an issue (triggered from UI)"""
-        return self.auto_resolve(issue_id)
+        if issue_id not in self.active_issues:
+            logger.error(f"Manual resolution failed: Issue {issue_id} not found")
+            return {'success': False, 'message': 'Issue not found'}
+            
+        logger.info(f"Manual resolution triggered for issue {issue_id}")
+        
+        # Set a higher success rate for manual resolutions
+        # This will bypass the random checks that might defer resolution
+        issue = self.active_issues[issue_id]
+        issue['manual_resolution'] = True
+        
+        # Call the auto_resolve but with a bypass for random checks
+        result = self.auto_resolve(issue_id)
+        logger.info(f"Manual resolution result: {result}")
+        return result
     
     def _get_resolution_strategy(self, issue):
         """Determine the appropriate resolution strategy based on the issue type"""
@@ -275,7 +377,7 @@ class NetworkResolver:
                         'echo "Simulating: Releasing network configuration..."',
                         'echo "Simulating: Renewing network configuration..."'
                     ],
-                    'verification_wait': 2,
+                    'verification_wait': 1,
                     'success_rate': 0.8
                 }
             else:
@@ -287,7 +389,7 @@ class NetworkResolver:
                         'ipconfig /release' if platform.system() == 'Windows' else 'sudo dhclient -r',
                         'ipconfig /renew' if platform.system() == 'Windows' else 'sudo dhclient'
                     ],
-                    'verification_wait': 5,
+                    'verification_wait': 2,
                     'success_rate': 0.8
                 }
         
@@ -302,7 +404,7 @@ class NetworkResolver:
                         'echo "Simulating: Enabling network adapter..."',
                         'echo "Simulating: Adapter successfully reset"'
                     ],
-                    'verification_wait': 2,
+                    'verification_wait': 1,
                     'success_rate': 0.9
                 }
             else:
@@ -314,8 +416,172 @@ class NetworkResolver:
                         'sleep 2',
                         'echo "Enabling network adapter..."'
                     ],
-                    'verification_wait': 5,
+                    'verification_wait': 2,
                     'success_rate': 0.7
+                }
+        
+        elif anomaly_type == 'dns_resolution_failure':
+            if simulation_mode:
+                return {
+                    'name': 'DNS Configuration Repair (Simulation)',
+                    'description': 'Simulated DNS repair process to fix resolution issues',
+                    'commands': [
+                        'echo "Simulating: Flushing DNS cache..."',
+                        'echo "Simulating: Checking DNS server configuration..."',
+                        'echo "Simulating: Setting alternative DNS servers..."',
+                        'echo "Simulating: Testing DNS resolution..."'
+                    ],
+                    'verification_wait': 1,
+                    'success_rate': 0.85
+                }
+            else:
+                return {
+                    'name': 'DNS Configuration Repair',
+                    'description': 'Fix DNS resolution by updating DNS settings and testing connectivity',
+                    'commands': [
+                        'ipconfig /flushdns' if platform.system() == 'Windows' else 'sudo systemd-resolve --flush-caches',
+                        'echo "Setting Google DNS as alternative..."',
+                        'nslookup google.com 8.8.8.8'
+                    ],
+                    'verification_wait': 2,
+                    'success_rate': 0.75
+                }
+                
+        elif anomaly_type == 'routing_loop':
+            if simulation_mode:
+                return {
+                    'name': 'Routing Table Repair (Simulation)',
+                    'description': 'Simulated repair of routing tables to fix network loops',
+                    'commands': [
+                        'echo "Simulating: Analyzing current routing table..."',
+                        'echo "Simulating: Identifying routing loop..."',
+                        'echo "Simulating: Clearing problematic routes..."',
+                        'echo "Simulating: Reinstating correct routing paths..."'
+                    ],
+                    'verification_wait': 1,
+                    'success_rate': 0.7
+                }
+            else:
+                return {
+                    'name': 'Routing Table Repair',
+                    'description': 'Fix routing loops by resetting network routes',
+                    'commands': [
+                        'netstat -r' if platform.system() == 'Windows' else 'ip route show',
+                        'route -f' if platform.system() == 'Windows' else 'sudo ip route flush table main',
+                        'ipconfig /release && ipconfig /renew' if platform.system() == 'Windows' else 'sudo dhclient -r && sudo dhclient'
+                    ],
+                    'verification_wait': 2,
+                    'success_rate': 0.65
+                }
+                
+        elif anomaly_type == 'bandwidth_saturation':
+            if simulation_mode:
+                return {
+                    'name': 'Traffic Optimization (Simulation)',
+                    'description': 'Simulated QoS management to optimize bandwidth usage',
+                    'commands': [
+                        'echo "Simulating: Identifying bandwidth-intensive applications..."',
+                        'echo "Simulating: Applying QoS traffic shaping..."',
+                        'echo "Simulating: Prioritizing critical network traffic..."',
+                        'echo "Simulating: Monitoring bandwidth utilization..."'
+                    ],
+                    'verification_wait': 1,
+                    'success_rate': 0.9
+                }
+            else:
+                return {
+                    'name': 'Traffic Optimization',
+                    'description': 'Manage bandwidth usage through traffic prioritization',
+                    'commands': [
+                        'netstat -b' if platform.system() == 'Windows' else 'netstat -p',
+                        'echo "Applying traffic shaping policies..."',
+                        'echo "Throttling non-essential traffic..."'
+                    ],
+                    'verification_wait': 2,
+                    'success_rate': 0.85
+                }
+                
+        elif anomaly_type == 'connection_timeout':
+            if simulation_mode:
+                return {
+                    'name': 'Service Connection Repair (Simulation)',
+                    'description': 'Simulated service connection troubleshooting',
+                    'commands': [
+                        'echo "Simulating: Testing connection to service..."',
+                        'echo "Simulating: Checking firewall rules..."',
+                        'echo "Simulating: Verifying service availability..."',
+                        'echo "Simulating: Reestablishing connection..."'
+                    ],
+                    'verification_wait': 1,
+                    'success_rate': 0.8
+                }
+            else:
+                return {
+                    'name': 'Service Connection Repair',
+                    'description': 'Diagnose and fix connection timeout issues',
+                    'commands': [
+                        'ping -n 4 1.1.1.1' if platform.system() == 'Windows' else 'ping -c 4 1.1.1.1',
+                        'tracert 1.1.1.1' if platform.system() == 'Windows' else 'traceroute 1.1.1.1',
+                        'echo "Clearing connection cache..."'
+                    ],
+                    'verification_wait': 2,
+                    'success_rate': 0.7
+                }
+                
+        elif anomaly_type == 'security_breach':
+            if simulation_mode:
+                return {
+                    'name': 'Security Countermeasures (Simulation)',
+                    'description': 'Simulated security response to potential threats',
+                    'commands': [
+                        'echo "Simulating: Identifying suspicious traffic source..."',
+                        'echo "Simulating: Temporarily blocking suspicious IP addresses..."',
+                        'echo "Simulating: Updating firewall rules..."',
+                        'echo "Simulating: Scanning for malware or intrusions..."',
+                        'echo "Simulating: Generating security incident report..."'
+                    ],
+                    'verification_wait': 1,
+                    'success_rate': 0.85
+                }
+            else:
+                return {
+                    'name': 'Security Countermeasures',
+                    'description': 'Respond to security threats with protective measures',
+                    'commands': [
+                        'netstat -an' if platform.system() == 'Windows' else 'netstat -tuln',
+                        'echo "Analyzing connection patterns..."',
+                        'echo "Updating firewall rules to block suspicious traffic..."'
+                    ],
+                    'verification_wait': 2,
+                    'success_rate': 0.75
+                }
+                
+        elif anomaly_type == 'device_failure':
+            if simulation_mode:
+                return {
+                    'name': 'Network Device Recovery (Simulation)',
+                    'description': 'Simulated recovery of failed network devices',
+                    'commands': [
+                        'echo "Simulating: Diagnosing device status..."',
+                        'echo "Simulating: Attempting device reboot..."',
+                        'echo "Simulating: Checking device connectivity..."',
+                        'echo "Simulating: Restoring device configuration..."',
+                        'echo "Simulating: Verifying device operation..."'
+                    ],
+                    'verification_wait': 1,
+                    'success_rate': 0.7
+                }
+            else:
+                return {
+                    'name': 'Network Device Recovery',
+                    'description': 'Recover failed network devices through restart and reconfiguration',
+                    'commands': [
+                        'ping -n 4 192.168.1.1' if platform.system() == 'Windows' else 'ping -c 4 192.168.1.1',
+                        'echo "Attempting device restart via management interface..."',
+                        'echo "Restoring default device configuration..."'
+                    ],
+                    'verification_wait': 2,
+                    'success_rate': 0.6
                 }
         
         else:  # general_anomaly or unknown
@@ -329,18 +595,20 @@ class NetworkResolver:
                         'echo "Simulating: Clearing ARP cache..."',
                         'echo "Simulating: Resetting TCP/IP stack..."'
                     ],
-                    'verification_wait': 2,
+                    'verification_wait': 1,
                     'success_rate': 0.75
                 }
             else:
                 return {
                     'name': 'Basic Network Troubleshooting',
-                    'description': 'Basic network troubleshooting steps to resolve general issues',
+                    'description': 'Basic network troubleshooting steps for general issues',
                     'commands': [
                         'ipconfig /flushdns' if platform.system() == 'Windows' else 'sudo systemd-resolve --flush-caches',
-                        'netsh winsock reset' if platform.system() == 'Windows' else 'echo "Winsock reset not applicable"'
+                        'netsh winsock reset' if platform.system() == 'Windows' else 'echo "Not applicable on this platform"',
+                        'arp -d *' if platform.system() == 'Windows' else 'sudo ip neigh flush all',
+                        'netsh int ip reset' if platform.system() == 'Windows' else 'sudo systemctl restart NetworkManager'
                     ],
-                    'verification_wait': 3,
+                    'verification_wait': 2,
                     'success_rate': 0.5
                 }
     
@@ -351,16 +619,20 @@ class NetworkResolver:
                 current_time = datetime.now()
                 for issue_id, issue in list(self.active_issues.items()):
                     if issue['status'] == 'pending':
-                        # Check if issue has been pending for more than 1 minute
+                        # Check if issue has been pending for more than 30 seconds
                         detected_time = datetime.fromisoformat(issue['detected_at'])
-                        if (current_time - detected_time).total_seconds() > 60:  # 1 minute
-                            logger.info(f"Retrying resolution for pending issue {issue_id} after 1 minute")
-                            self.auto_resolve(issue_id)
+                        if (current_time - detected_time).total_seconds() > 30:  # Changed from 60 (1 minute) to 30 seconds
+                            logger.info(f"Retrying resolution for pending issue {issue_id} after 30 seconds")
+                            result = self.auto_resolve(issue_id)
+                            logger.info(f"Resolution result: {result}")
+                
+                # Log count of active and resolved issues
+                logger.info(f"Active issues: {len(self.active_issues)}, Resolved issues: {len(self.resolution_history)}")
             except Exception as e:
                 logger.error(f"Error checking pending issues: {e}")
             
-            # Check every minute
-            time.sleep(60)
+            # Check every 30 seconds instead of every minute
+            time.sleep(30)
 
 # For testing
 if __name__ == "__main__":

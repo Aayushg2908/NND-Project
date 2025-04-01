@@ -1,15 +1,35 @@
 import time
 import random
+import os
 import logging
-import threading
 import socket
+import threading
 import subprocess
 import platform
 from datetime import datetime
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Set up logging to both console and file
+if not os.path.exists('logs'):
+    os.makedirs('logs')
+
+# Configure logger
 logger = logging.getLogger('network_monitor')
+logger.setLevel(logging.INFO)
+
+# Only add handlers if none exist to avoid duplicate logs
+if not logger.handlers:
+    # Create handlers
+    file_handler = logging.FileHandler('logs/app.log')
+    console_handler = logging.StreamHandler()
+    
+    # Create formatter and add to handlers
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+    
+    # Add handlers to logger
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
 
 # Global network status
 network_status = {

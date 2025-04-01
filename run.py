@@ -6,7 +6,7 @@ if __name__ == "__main__":
     app = create_app()
     
     # Start network monitoring in a separate thread
-    monitor = NetworkMonitor()
+    monitor = NetworkMonitor(interval=5)
     monitor_thread = threading.Thread(target=monitor.start)
     monitor_thread.daemon = True
     monitor_thread.start()

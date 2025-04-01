@@ -2,6 +2,8 @@ from flask import Blueprint, render_template, jsonify, request
 from app.network.monitor import get_network_status
 from app.models.anomaly_detector import AnomalyDetector
 from app.healing.resolver import NetworkResolver
+import os
+import json
 
 main_bp = Blueprint('main', __name__)
 
@@ -46,9 +48,91 @@ def get_issues():
     issues = network_resolver.get_active_issues()
     return jsonify(issues)
 
+@main_bp.route('/api/healing/resolved')
+def get_resolved_issues():
+    """Get history of resolved issues"""
+    # Force reload of resolution history to ensure we have the latest data
+    network_resolver._load_resolution_history()
+    
+    # Return a copy of the list to avoid potential concurrency issues
+    history = network_resolver.resolution_history.copy() if network_resolver.resolution_history else []
+    
+    # Add debugging info
+    print(f"Returning {len(history)} resolved issues")
+    
+    return jsonify(history)
+
 @main_bp.route('/api/healing/resolve', methods=['POST'])
 def resolve_issue():
     """Manually trigger resolution for an issue"""
-    issue_id = request.json.get('issue_id')
-    result = network_resolver.resolve_issue(issue_id)
-    return jsonify(result) 
+    try:
+        data = request.json
+        if not data or 'issue_id' not in data:
+            print(f"Invalid request data: {data}")
+            return jsonify({'success': False, 'message': 'Missing issue_id in request'}), 400
+            
+        issue_id = data.get('issue_id')
+        print(f"Attempting to resolve issue: {issue_id}")
+        
+        result = network_resolver.resolve_issue(issue_id)
+        print(f"Resolution result: {result}")
+        
+        # Force reload active issues after resolution attempt
+        network_resolver._load_active_issues()
+        
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error resolving issue: {str(e)}")
+        return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
+
+@main_bp.route('/api/logs')
+def get_latest_logs():
+    """Get latest system logs"""
+    # This implementation uses a log catcher that stores recent logs in memory
+    # Create a class to capture logs
+    import logging
+    import time
+    from datetime import datetime
+    
+    # Check if log file exists and read from it
+    log_file = os.path.join('logs', 'app.log')
+    logs = []
+    
+    # If log file exists, get the latest entries
+    if os.path.exists(log_file):
+        try:
+            with open(log_file, 'r') as f:
+                log_lines = f.readlines()
+                # Get the last 20 lines
+                log_lines = log_lines[-50:] if len(log_lines) > 50 else log_lines
+                
+                for line in log_lines:
+                    try:
+                        # Parse log line (format: YYYY-MM-DD HH:MM:SS,MS - name - level - message)
+                        parts = line.strip().split(' - ', 3)
+                        if len(parts) >= 4:
+                            timestamp_str, source, level, message = parts
+                            logs.append({
+                                "timestamp": timestamp_str,
+                                "level": level,
+                                "source": source,
+                                "message": message
+                            })
+                    except Exception as e:
+                        print(f"Error parsing log line: {e}")
+        except Exception as e:
+            print(f"Error reading log file: {e}")
+    
+    # If no logs found in file or file doesn't exist, use simulated logs
+    if not logs:
+        current_time = datetime.now().isoformat()
+        logs = [
+            {"timestamp": current_time, "level": "INFO", "source": "monitor", "message": "Network monitoring started"},
+            {"timestamp": current_time, "level": "INFO", "source": "monitor", "message": "Network status updated: Health=good, Latency=45ms, Packet Loss=0.5%"},
+            {"timestamp": current_time, "level": "WARNING", "source": "detector", "message": "Detected anomaly: high_latency (score: -0.75)"},
+            {"timestamp": current_time, "level": "INFO", "source": "resolver", "message": "Created new issue for anomaly type high_latency"},
+            {"timestamp": current_time, "level": "INFO", "source": "resolver", "message": "Executing command: Simulating: Flushing DNS cache..."},
+            {"timestamp": current_time, "level": "INFO", "source": "resolver", "message": "Issue marked as resolved"}
+        ]
+    
+    return jsonify(logs) 
