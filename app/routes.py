@@ -4,6 +4,9 @@ from app.models.anomaly_detector import AnomalyDetector
 from app.healing.resolver import NetworkResolver
 import os
 import json
+import time
+import uuid
+from datetime import datetime
 from app import socketio
 from flask_socketio import emit
 
@@ -12,6 +15,9 @@ main_bp = Blueprint('main', __name__)
 # Initialize components as global variables
 anomaly_detector = AnomalyDetector()
 network_resolver = NetworkResolver()
+
+# Track connected clients
+connected_clients = {}
 
 # Helper functions to emit Socket.IO events
 def emit_active_issues():
@@ -56,6 +62,16 @@ def emit_network_status():
     status = get_network_status()
     socketio.emit('network_status_update', status, namespace='/')
 
+def emit_connected_clients():
+    """Emit connected clients to all clients"""
+    clients_list = list(connected_clients.values())
+    socketio.emit('connected_clients_update', clients_list, namespace='/')
+    
+    # Also update the network status with the connected clients count
+    status = get_network_status()
+    status['connected_devices'] = len(connected_clients)
+    socketio.emit('network_status_update', status, namespace='/')
+
 # Function to ensure callbacks are registered - now defined after the functions it uses
 def register_socketio_callbacks():
     """Register all Socket.IO callbacks with the NetworkResolver"""
@@ -74,14 +90,47 @@ def register_socketio_callbacks():
 @socketio.on('connect')
 def handle_connect():
     """Handle client connection"""
-    print("Client connected")
+    # Generate a unique ID for this client
+    client_id = str(uuid.uuid4())
+    
+    # Store client information
+    connected_clients[request.sid] = {
+        'id': client_id,
+        'ip': request.remote_addr if request.remote_addr else 'unknown',
+        'user_agent': request.headers.get('User-Agent', 'unknown'),
+        'connected_at': datetime.now().isoformat(),
+        'last_active': datetime.now().isoformat(),
+        'status': 'active',
+        'tab_id': request.args.get('tab_id', 'unknown')  # Store the tab ID if provided
+    }
+    
+    print(f"Client connected: {client_id} from {request.remote_addr}")
+    print(f"Total connected clients: {len(connected_clients)}")
+    
     # Register callbacks on each new connection to ensure they're active
     register_socketio_callbacks()
+    
     # Send initial data on connection
     emit_active_issues()
     emit_resolved_issues()
     emit_logs()
     emit_network_status()
+    
+    # Broadcast updated client list to all clients
+    emit_connected_clients()
+
+@socketio.on('client_heartbeat')
+def handle_heartbeat(data):
+    """Handle client heartbeat to update last active time"""
+    if request.sid in connected_clients:
+        connected_clients[request.sid]['last_active'] = datetime.now().isoformat()
+        
+        # Update client info if provided
+        if 'client_info' in data:
+            if 'name' in data['client_info']:
+                connected_clients[request.sid]['name'] = data['client_info']['name']
+            if 'location' in data['client_info']:
+                connected_clients[request.sid]['location'] = data['client_info']['location']
 
 @socketio.on('request_data_refresh')
 def handle_data_refresh():
@@ -91,11 +140,21 @@ def handle_data_refresh():
     emit_resolved_issues()
     emit_logs()
     emit_network_status()
+    emit_connected_clients()
 
 @socketio.on('disconnect')
 def handle_disconnect():
     """Handle client disconnection"""
-    print("Client disconnected")
+    if request.sid in connected_clients:
+        client_id = connected_clients[request.sid]['id']
+        print(f"Client disconnected: {client_id}")
+        del connected_clients[request.sid]
+        print(f"Total connected clients: {len(connected_clients)}")
+        
+        # Broadcast updated client list to all clients
+        emit_connected_clients()
+    else:
+        print("Unknown client disconnected")
 
 @socketio.on('ping')
 def handle_ping():
@@ -114,6 +173,12 @@ def index():
 @main_bp.route('/api/network/status')
 def network_status():
     """API endpoint to get current network status"""
+    status = get_network_status()
+    return jsonify(status)
+
+@main_bp.route('/api/network_status')
+def network_status_alt():
+    """Alternative API endpoint for network status (for frontend compatibility)"""
     status = get_network_status()
     return jsonify(status)
 
@@ -238,4 +303,4 @@ def get_latest_logs_data():
             {"timestamp": current_time, "level": "INFO", "source": "resolver", "message": "Issue marked as resolved"}
         ]
     
-    return logs 
+    return logs
