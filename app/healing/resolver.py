@@ -99,7 +99,7 @@ class NetworkResolver:
         for callback in self.update_callbacks:
             try:
                 logger.info(f"Executing update callback: {callback.__name__ if hasattr(callback, '__name__') else 'anonymous'}")
-                callback()
+                callback(self.get_model_accuracy())
                 logger.info(f"Successfully executed update callback")
             except Exception as e:
                 logger.error(f"Error in update callback: {e}")
@@ -699,6 +699,13 @@ class NetworkResolver:
                     'success_rate': 0.5
                 }
     
+    def get_model_accuracy(self):
+        """Get the current model accuracy"""
+        # Import here to avoid circular imports
+        from app.models.anomaly_detector import AnomalyDetector
+        detector = AnomalyDetector()
+        return detector.get_model_accuracy()
+    
     def _check_pending_issues(self):
         """Background thread to check and retry pending issues"""
         while True:
@@ -725,6 +732,21 @@ class NetworkResolver:
             
             # Check every 30 seconds instead of every minute
             time.sleep(30)
+    
+    def get_network_status(self):
+        """Get the current network status"""
+        from app.models.anomaly_detector import AnomalyDetector
+        detector = AnomalyDetector()
+        
+        status = {
+            'latency': self._get_latency(),
+            'bandwidth_usage': self._get_bandwidth_usage(),
+            'packet_loss': self._get_packet_loss(),
+            'connected_devices': self._get_connected_devices(),
+            'simulation_mode': self.simulation_mode,
+            'model_accuracy': detector.get_model_accuracy()
+        }
+        return status
 
 # For testing
 if __name__ == "__main__":

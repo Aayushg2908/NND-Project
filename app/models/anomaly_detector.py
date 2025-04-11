@@ -51,6 +51,10 @@ class AnomalyDetector:
         # Feature names to extract from network status
         self.features = ['latency', 'bandwidth_usage', 'packet_loss']
         
+        # Initialize model accuracy
+        self.current_accuracy = 95.0  # Start at 95%
+        self.last_accuracy_update = datetime.now()
+        
         # Create or load the model
         if os.path.exists(MODEL_FILE):
             logger.info(f"Loading existing anomaly detection model from {MODEL_FILE}")
@@ -452,6 +456,21 @@ class AnomalyDetector:
             return {
                 'features': dict(zip(self.features, self._extract_features(network_status)))
             }
+
+    def get_model_accuracy(self):
+        """Get current model accuracy (simulated)"""
+        current_time = datetime.now()
+        
+        # Update accuracy every 10 seconds
+        if (current_time - self.last_accuracy_update).total_seconds() >= 10:
+            # Generate a small random change (-0.3 to +0.3)
+            change = (random.random() - 0.5) * 0.6
+            
+            # Update accuracy ensuring it stays between 93 and 97
+            self.current_accuracy = max(93.0, min(97.0, self.current_accuracy + change))
+            self.last_accuracy_update = current_time
+        
+        return round(self.current_accuracy, 2)
 
 # For testing
 if __name__ == "__main__":

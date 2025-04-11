@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime
 from app import socketio
 from flask_socketio import emit
+import logging
 
 main_bp = Blueprint('main', __name__)
 
@@ -62,16 +63,6 @@ def emit_network_status():
     status = get_network_status()
     socketio.emit('network_status_update', status, namespace='/')
 
-def emit_connected_clients():
-    """Emit connected clients to all clients"""
-    clients_list = list(connected_clients.values())
-    socketio.emit('connected_clients_update', clients_list, namespace='/')
-    
-    # Also update the network status with the connected clients count
-    status = get_network_status()
-    status['connected_devices'] = len(connected_clients)
-    socketio.emit('network_status_update', status, namespace='/')
-
 # Function to ensure callbacks are registered - now defined after the functions it uses
 def register_socketio_callbacks():
     """Register all Socket.IO callbacks with the NetworkResolver"""
@@ -90,34 +81,29 @@ def register_socketio_callbacks():
 @socketio.on('connect')
 def handle_connect():
     """Handle client connection"""
-    # Generate a unique ID for this client
-    client_id = str(uuid.uuid4())
-    
-    # Store client information
-    connected_clients[request.sid] = {
+    client_id = request.sid
+    connected_clients[client_id] = {
         'id': client_id,
-        'ip': request.remote_addr if request.remote_addr else 'unknown',
-        'user_agent': request.headers.get('User-Agent', 'unknown'),
-        'connected_at': datetime.now().isoformat(),
-        'last_active': datetime.now().isoformat(),
-        'status': 'active',
-        'tab_id': request.args.get('tab_id', 'unknown')  # Store the tab ID if provided
+        'connected_at': datetime.now().isoformat()
     }
-    
-    print(f"Client connected: {client_id} from {request.remote_addr}")
-    print(f"Total connected clients: {len(connected_clients)}")
-    
-    # Register callbacks on each new connection to ensure they're active
-    register_socketio_callbacks()
-    
-    # Send initial data on connection
-    emit_active_issues()
-    emit_resolved_issues()
-    emit_logs()
-    emit_network_status()
-    
-    # Broadcast updated client list to all clients
-    emit_connected_clients()
+    # Broadcast updated count to all clients
+    emit('client_connected', {'count': len(connected_clients)}, broadcast=True)
+    logging.info(f'Client connected. Total clients: {len(connected_clients)}')
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Handle client disconnection"""
+    client_id = request.sid
+    if client_id in connected_clients:
+        del connected_clients[client_id]
+        # Broadcast updated count to all clients
+        emit('client_disconnected', {'count': len(connected_clients)}, broadcast=True)
+        logging.info(f'Client disconnected. Total clients: {len(connected_clients)}')
+
+@socketio.on('get_client_count')
+def handle_get_client_count():
+    """Send current client count to requesting client"""
+    emit('client_count', {'count': len(connected_clients)})
 
 @socketio.on('client_heartbeat')
 def handle_heartbeat(data):
@@ -140,21 +126,6 @@ def handle_data_refresh():
     emit_resolved_issues()
     emit_logs()
     emit_network_status()
-    emit_connected_clients()
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    """Handle client disconnection"""
-    if request.sid in connected_clients:
-        client_id = connected_clients[request.sid]['id']
-        print(f"Client disconnected: {client_id}")
-        del connected_clients[request.sid]
-        print(f"Total connected clients: {len(connected_clients)}")
-        
-        # Broadcast updated client list to all clients
-        emit_connected_clients()
-    else:
-        print("Unknown client disconnected")
 
 @socketio.on('ping')
 def handle_ping():

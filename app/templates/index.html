@@ -139,68 +139,63 @@
         
         <!-- Network Metrics Section -->
         <div class="row">
-            <div class="col-md-12">
-                <div class="card dashboard-card">
-                    <div class="card-header d-flex justify-content-between align-items-center bg-white">
-                        <h5 class="mb-0">Network Metrics</h5>
-                        <button id="refreshMetrics" class="btn btn-sm btn-outline-primary">Refresh</button>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-3">
-                                <div class="card bg-light">
-                                    <div class="card-body text-center">
-                                        <h6 class="card-title">Latency</h6>
-                                        <h3 id="network-latency">0 ms</h3>
-                                        <div class="progress mt-2">
-                                            <div id="latency-bar" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="card bg-light">
-                                    <div class="card-body text-center">
-                                        <h6 class="card-title">Bandwidth Usage</h6>
-                                        <h3 id="network-bandwidth">0 Mbps</h3>
-                                        <div class="progress mt-2">
-                                            <div id="bandwidth-bar" class="progress-bar bg-info" role="progressbar" style="width: 0%"></div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="card bg-light">
-                                    <div class="card-body text-center">
-                                        <h6 class="card-title">Packet Loss</h6>
-                                        <h3 id="network-packet-loss">0%</h3>
-                                        <div class="progress mt-2">
-                                            <div id="packet-loss-bar" class="progress-bar bg-warning" role="progressbar" style="width: 0%"></div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="card bg-light">
-                                    <div class="card-body text-center">
-                                        <h6 class="card-title">Connected Devices</h6>
-                                        <h3 id="network-devices">0</h3>
-                                        <p id="network-mode" class="badge bg-secondary mt-2">Simulation Mode</p>
-                                    </div>
-                                </div>
-                            </div>
+            <!-- Model Accuracy Card -->
+            <div class="col-md-3">
+                <div class="card bg-light">
+                    <div class="card-body text-center">
+                        <h6 class="card-title">Model Accuracy</h6>
+                        <div class="d-flex align-items-center justify-content-center">
+                            <h3 id="model-accuracy">95.00</h3>
+                            <small class="ms-1">%</small>
                         </div>
-                        <div class="row mt-3">
-                            <div class="col-12">
-                                <div class="card">
-                                    <div class="card-body">
-                                        <h6>Network Status History</h6>
-                                        <div id="network-history" style="height: 150px;">
-                                            <div class="text-center text-muted py-5">Network history will appear here...</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                        <div class="progress mt-2" style="height: 4px;">
+                            <div id="accuracy-bar" class="progress-bar bg-success" role="progressbar" style="width: 95%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Connected Devices Card -->
+            <div class="col-md-3">
+                <div class="card bg-light">
+                    <div class="card-body text-center">
+                        <h6 class="card-title">Connected Devices</h6>
+                        <h3 id="network-devices">0</h3>
+                        <p id="network-mode" class="badge bg-secondary mt-2">Simulation Mode</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-3">
+                <div class="card bg-light">
+                    <div class="card-body text-center">
+                        <h6 class="card-title">Latency</h6>
+                        <h3 id="network-latency">0 ms</h3>
+                        <div class="progress mt-2">
+                            <div id="latency-bar" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-light">
+                    <div class="card-body text-center">
+                        <h6 class="card-title">Bandwidth Usage</h6>
+                        <h3 id="network-bandwidth">0 Mbps</h3>
+                        <div class="progress mt-2">
+                            <div id="bandwidth-bar" class="progress-bar bg-info" role="progressbar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row mt-3">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <h6>Network Status History</h6>
+                        <div id="network-history" style="height: 150px;">
+                            <div class="text-center text-muted py-5">Network history will appear here...</div>
                         </div>
                     </div>
                 </div>
@@ -256,12 +251,12 @@
             forceNew: true,  // Force a new connection for each tab
             reconnection: true,
             reconnectionAttempts: 5,
-            reconnectionDelay: 1000,
-            query: {
-                tab_id: tabId  // Pass the tab ID as a query parameter
-            }
+            reconnectionDelay: 1000
         });
         
+        // Track connected clients
+        let connectedClients = 0;
+
         // Socket status indicator element
         const socketStatus = document.getElementById('socket-status');
         
@@ -270,6 +265,9 @@
             console.log('Connected to server via Socket.IO');
             socketStatus.className = 'socket-connected';
             socketStatus.textContent = 'Connected';
+            
+            // Request current client count on connection
+            socket.emit('get_client_count');
             
             // Immediately request data updates
             console.log('Requesting initial data after connection');
@@ -514,10 +512,28 @@
         });
         
         // Handle connected clients updates
-        socket.on('connected_clients_update', function(clients) {
-            console.log('Received connected clients update:', clients);
-            updateConnectedClients(clients);
+        socket.on('client_connected', function(data) {
+            console.log('Client connected:', data);
+            connectedClients = data.count;
+            updateConnectedDevices();
         });
+
+        socket.on('client_disconnected', function(data) {
+            console.log('Client disconnected:', data);
+            connectedClients = data.count;
+            updateConnectedDevices();
+        });
+
+        socket.on('client_count', function(data) {
+            console.log('Client count update:', data);
+            connectedClients = data.count;
+            updateConnectedDevices();
+        });
+
+        function updateConnectedDevices() {
+            const devicesElement = document.getElementById('network-devices');
+            devicesElement.textContent = connectedClients;
+        }
         
         // Initialize date formatter
         function formatDate(dateString) {
@@ -808,57 +824,54 @@
         
         // Update network metrics
         function updateNetworkMetrics(status) {
-            // Update metrics values
-            document.getElementById('network-latency').textContent = status.latency + ' ms';
-            document.getElementById('network-bandwidth').textContent = status.bandwidth_usage + ' Mbps';
-            document.getElementById('network-packet-loss').textContent = status.packet_loss + '%';
-            document.getElementById('network-devices').textContent = status.connected_devices;
+            // Update latency
+            document.getElementById('network-latency').textContent = status.latency.toFixed(2) + ' ms';
+            document.getElementById('latency-bar').style.width = Math.min(100, (status.latency / 2)) + '%';
             
-            // Update progress bars
-            const latencyBar = document.getElementById('latency-bar');
-            const bandwidthBar = document.getElementById('bandwidth-bar');
-            const packetLossBar = document.getElementById('packet-loss-bar');
+            // Update bandwidth
+            document.getElementById('network-bandwidth').textContent = status.bandwidth_usage.toFixed(2) + ' Mbps';
+            document.getElementById('bandwidth-bar').style.width = status.bandwidth_usage + '%';
             
-            // Latency: 0-100ms is good (green), 100-300ms is warning (yellow), >300ms is critical (red)
-            let latencyPercent = Math.min(status.latency / 10, 100); // Scale to 0-100%
-            latencyBar.style.width = latencyPercent + '%';
-            if (status.latency < 100) {
-                latencyBar.className = 'progress-bar bg-success';
-            } else if (status.latency < 300) {
-                latencyBar.className = 'progress-bar bg-warning';
-            } else {
-                latencyBar.className = 'progress-bar bg-danger';
-            }
-            
-            // Bandwidth: 0-100% scale
-            let bandwidthPercent = Math.min(status.bandwidth_usage * 2, 100); // Scale to 0-100%
-            bandwidthBar.style.width = bandwidthPercent + '%';
-            
-            // Packet Loss: 0-100% scale
-            let packetLossPercent = Math.min(status.packet_loss * 5, 100); // Scale to 0-100%
-            packetLossBar.style.width = packetLossPercent + '%';
-            if (status.packet_loss < 1) {
-                packetLossBar.className = 'progress-bar bg-success';
-            } else if (status.packet_loss < 5) {
-                packetLossBar.className = 'progress-bar bg-warning';
-            } else {
-                packetLossBar.className = 'progress-bar bg-danger';
-            }
-            
-            // Update simulation mode indicator
+            // Update simulation mode
             const networkMode = document.getElementById('network-mode');
-            if (status.simulation_mode !== undefined) {
-                if (status.simulation_mode) {
-                    networkMode.textContent = 'Simulation Mode';
-                    networkMode.className = 'badge bg-secondary mt-2';
-                } else {
-                    networkMode.textContent = 'Real Network Mode';
-                    networkMode.className = 'badge bg-primary mt-2';
-                }
+            networkMode.textContent = status.simulation_mode ? 'Simulation Mode' : 'Real Mode';
+            networkMode.className = 'badge ' + (status.simulation_mode ? 'bg-secondary' : 'bg-primary') + ' mt-2';
+        }
+        
+        // Simulate model accuracy
+        let currentAccuracy = 95.0;
+        
+        function simulateAccuracy() {
+            // Generate random change between -0.3 and 0.3
+            const change = (Math.random() - 0.5) * 0.6;
+            
+            // Update accuracy ensuring it stays between 93 and 97
+            currentAccuracy = Math.max(93.0, Math.min(97.0, currentAccuracy + change));
+            
+            // Update display
+            const accuracyElement = document.getElementById('model-accuracy');
+            const accuracyBar = document.getElementById('accuracy-bar');
+            
+            accuracyElement.textContent = currentAccuracy.toFixed(2);
+            accuracyBar.style.width = ((currentAccuracy - 90) * 20) + '%';
+            
+            // Update color based on accuracy level
+            if (currentAccuracy >= 96) {
+                accuracyBar.className = 'progress-bar bg-success';
+            } else if (currentAccuracy >= 94) {
+                accuracyBar.className = 'progress-bar bg-info';
+            } else {
+                accuracyBar.className = 'progress-bar bg-warning';
             }
         }
-
-        // Start sending heartbeats to the server
+        
+        // Update accuracy every 2 seconds
+        setInterval(simulateAccuracy, 2000);
+        
+        // Initial simulation
+        simulateAccuracy();
+        
+        // Start sending heartbeats
         function startHeartbeat() {
             // Clear any existing interval
             if (window.heartbeatInterval) {
